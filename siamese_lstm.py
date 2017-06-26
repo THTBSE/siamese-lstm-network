@@ -4,7 +4,7 @@ import tensorflow as tf
 
 class SiameseLSTM(object):
 
-	def bi_lstm(self, inputs, rnn_size, layer_size, keep_prob):
+	def bi_lstm(self, rnn_size, layer_size, keep_prob):
 
 		# forward rnn
 		with tf.name_scope('fw_rnn'), tf.variable_scope('fw_rnn'):
@@ -16,11 +16,7 @@ class SiameseLSTM(object):
 			lstm_bw_cell_list = [tf.contrib.rnn.LSTMCell(rnn_size) for _ in xrange(layer_size)]
 			lstm_bw_cell_m = tf.contrib.rnn.DropoutWrapper(tf.contrib.rnn.MultiRNNCell(lstm_fw_cell_list), output_keep_prob=keep_prob)
 
-		with tf.name_scope('bi_rnn'), tf.variable_scope('bi_rnn'):
-			outputs, _, _ = tf.contrib.rnn.static_bidirectional_rnn(lstm_fw_cell_m, lstm_bw_cell_m, inputs, dtype=tf.float32)
-			output = tf.reduce_mean(outputs, 0)
-
-		return output
+		return lstm_fw_cell_m, lstm_bw_cell_m
 
 	def weight_variables(self, shape, name):
 
@@ -56,12 +52,14 @@ class SiameseLSTM(object):
 		inputs_x1 = self.transform_inputs(inputs_x1, rnn_size, sequence_length)
 		inputs_x2 = self.transform_inputs(inputs_x2, rnn_size, sequence_length)
 
-		with tf.variable_scope('output_x1'):
-			output_x1 = self.bi_lstm(inputs_x1, rnn_size, layer_size, keep_prob)
-			print 'output_x1 shape: ', output_x1.shape
-		with tf.variable_scope('output_x2'):
-			output_x2 = self.bi_lstm(inputs_x2, rnn_size, layer_size, keep_prob)
-			print 'output_x2 shape: ', output_x2.shape
+		with tf.variable_scope('output'):
+			bilstm_fw, bilstm_bw = self.bi_lstm(rnn_size, layer_size, keep_prob)
+			outputs_x1, _, _ = tf.contrib.rnn.static_bidirectional_rnn(bilstm_fw, bilstm_bw, inputs_x1, dtype=tf.float32)
+			output_x1 = tf.reduce_mean(outputs_x1, 0)
+			## 开启变量重用的开关
+			tf.get_variable_scope().reuse_variables()
+			outputs_x2, _, _ = tf.contrib.rnn.static_bidirectional_rnn(bilstm_fw, bilstm_bw, inputs_x2, dtype=tf.float32)
+			output_x2 = tf.reduce_mean(outputs_x2, 0)
 
 		with tf.variable_scope('dense_layer'):
 			fc_w1 = self.weight_variables([2*rnn_size, 128], 'fc_w1')
